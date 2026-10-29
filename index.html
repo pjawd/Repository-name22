@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0284c7">
+  <meta name="description" content="解析公开的抖音和 X/Twitter 视频链接">
+  <link rel="manifest" href="/manifest.json">
+  <title>SaveTWT - 视频链接解析</title>
+  <style>
+    :root { color-scheme: light; --blue:#0284c7; --blue2:#0369a1; --ink:#172033; --muted:#64748b; --line:#e2e8f0; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; padding:24px 16px; display:flex; align-items:center; justify-content:center; background:linear-gradient(160deg,#eff8ff,#f8fafc 45%,#eef2ff); color:var(--ink); font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    .card { width:min(100%,560px); background:white; border:1px solid #e8eef5; border-radius:22px; padding:28px; box-shadow:0 18px 50px #0f172a0d; }
+    .brand { display:flex; justify-content:center; align-items:center; gap:9px; font-size:22px; font-weight:800; color:var(--blue); margin-bottom:22px; }
+    .brand-mark { display:grid; place-items:center; width:32px; height:32px; border-radius:10px; color:white; background:var(--blue); }
+    h1 { font-size:21px; text-align:center; margin:0 0 8px; }
+    .subtitle { text-align:center; color:var(--muted); font-size:13px; line-height:1.65; margin:0 0 24px; }
+    label { display:block; font-size:13px; font-weight:700; margin-bottom:8px; }
+    input { width:100%; min-width:0; padding:14px 15px; border:1px solid var(--line); border-radius:11px; font-size:14px; outline:none; }
+    input:focus { border-color:var(--blue); box-shadow:0 0 0 3px #0284c71a; }
+    .buttons { display:flex; gap:10px; margin-top:12px; }
+    button { border:0; border-radius:10px; padding:13px 15px; cursor:pointer; font-weight:750; font-size:14px; }
+    button:disabled { opacity:.6; cursor:wait; }
+    .primary { flex:1; background:var(--blue); color:white; }
+    .primary:hover:not(:disabled) { background:var(--blue2); }
+    .secondary { background:#e0f2fe; color:#075985; }
+    .message { display:none; margin-top:16px; padding:12px 14px; border-radius:10px; font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
+    .message.error { display:block; background:#fff1f2; color:#9f1239; border:1px solid #ffe4e6; }
+    .message.info { display:block; background:#eff6ff; color:#1d4ed8; border:1px solid #dbeafe; }
+    .results { display:none; margin-top:22px; border-top:1px solid var(--line); padding-top:20px; }
+    .results h2 { font-size:16px; margin:0 0 12px; }
+    .video-title { font-size:13px; color:var(--muted); margin-bottom:12px; overflow-wrap:anywhere; }
+    .result-item { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:13px 0; border-bottom:1px solid #f1f5f9; }
+    .result-meta { min-width:0; }
+    .result-name { font-weight:700; font-size:14px; }
+    .result-note { color:var(--muted); font-size:12px; margin-top:4px; }
+    .download { display:inline-block; flex-shrink:0; text-decoration:none; background:var(--blue); color:white; padding:9px 12px; border-radius:8px; font-size:12px; font-weight:800; }
+    .notice { margin-top:22px; background:#f8fafc; border-radius:12px; padding:13px 15px; color:#64748b; font-size:12px; line-height:1.8; }
+    .notice strong { color:#334155; }
+    .footer { text-align:center; color:#94a3b8; font-size:11px; margin-top:16px; }
+    @media(max-width:420px) { .card{padding:22px 17px}.buttons{flex-direction:column}.result-item{align-items:flex-start}.download{margin-top:2px} }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand"><span class="brand-mark">▶</span> SaveTWT</div>
+    <h1>抖音 / Twitter (X) 视频解析</h1>
+    <p class="subtitle">粘贴公开视频链接，获取解析服务实际返回的媒体地址。不会伪造成功状态或下载链接。</p>
+    <form id="parse-form">
+      <label for="video-url">视频分享链接</label>
+      <input id="video-url" type="url" placeholder="https://www.douyin.com/video/... 或 https://x.com/.../status/..." autocomplete="url" required>
+      <div class="buttons">
+        <button class="secondary" id="paste-btn" type="button">粘贴链接</button>
+        <button class="primary" id="parse-btn" type="submit">开始解析</button>
+      </div>
+    </form>
+    <div id="message" class="message" role="status" aria-live="polite"></div>
+    <section id="results" class="results" aria-live="polite">
+      <h2>解析结果</h2>
+      <div id="video-title" class="video-title"></div>
+      <div id="download-list"></div>
+    </section>
+    <div class="notice">
+      <strong>使用说明</strong><br>
+      1. 目前尝试支持抖音和 X/Twitter 的公开链接。<br>
+      2. 解析依赖第三方服务，可能因限流、平台变更、地区或隐私限制而失败。<br>
+      3. 仅下载你有权保存的内容，并遵守平台条款及当地法律。<br>
+      4. 若解析失败，页面会显示错误原因，不会显示假下载按钮。
+    </div>
+    <div class="footer">SaveTWT · 第三方解析服务不由本站运营</div>
+  </main>
+<script>
+const form = document.getElementById('parse-form');
+const input = document.getElementById('video-url');
+const parseBtn = document.getElementById('parse-btn');
+const pasteBtn = document.getElementById('paste-btn');
+const message = document.getElementById('message');
+const results = document.getElementById('results');
+const titleNode = document.getElementById('video-title');
+const listNode = document.getElementById('download-list');
+
+function showMessage(text, kind = 'error') {
+  message.textContent = text;
+  message.className = 'message ' + kind;
+}
+function clearResults() {
+  results.style.display = 'none';
+  titleNode.textContent = '';
+  listNode.replaceChildren();
+}
+pasteBtn.addEventListener('click', async () => {
+  try {
+    input.value = await navigator.clipboard.readText();
+    input.focus();
+  } catch {
+    showMessage('浏览器未允许读取剪贴板，请手动粘贴链接。', 'info');
+  }
+});
+form.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  clearResults();
+  message.className = 'message';
+  const url = input.value.trim();
+  if (!url) return showMessage('请先输入视频链接。');
+  parseBtn.disabled = true;
+  parseBtn.textContent = '解析中…';
+  try {
+    const response = await fetch('/api/parse', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    let data;
+    try { data = await response.json(); }
+    catch { throw new Error('解析服务返回了非 JSON 响应，请稍后重试。'); }
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || `解析失败（HTTP ${response.status}）。`);
+    }
+    if (!Array.isArray(data.formats) || data.formats.length === 0) {
+      throw new Error('解析服务没有返回可用的视频地址；可能是视频不可访问或第三方接口已变更。');
+    }
+    titleNode.textContent = data.title || '已找到媒体地址';
+    for (const item of data.formats) {
+      const row = document.createElement('div');
+      row.className = 'result-item';
+      const meta = document.createElement('div');
+      meta.className = 'result-meta';
+      const name = document.createElement('div');
+      name.className = 'result-name';
+      name.textContent = item.label || '视频文件';
+      const note = document.createElement('div');
+      note.className = 'result-note';
+      note.textContent = item.mimeType || '媒体链接由解析服务提供';
+      meta.append(name, note);
+      const link = document.createElement('a');
+      link.className = 'download';
+      link.href = item.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = '打开 / 下载';
+      link.referrerPolicy = 'no-referrer';
+      row.append(meta, link);
+      listNode.append(row);
+    }
+    results.style.display = 'block';
+    showMessage('解析服务已返回媒体地址。若点击后播放而非下载，可在视频页面使用浏览器的下载功能。', 'info');
+  } catch (error) {
+    showMessage(error instanceof Error ? error.message : '发生未知错误，请稍后重试。');
+  } finally {
+    parseBtn.disabled = false;
+    parseBtn.textContent = '开始解析';
+  }
+});
+</script>
+</body>
+</html>
